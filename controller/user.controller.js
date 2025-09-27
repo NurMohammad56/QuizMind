@@ -1,15 +1,14 @@
 import httpStatus from "http-status";
 import { User } from "../model/user.model.js";
-import { uploadOnCloudinary } from "../utils/commonMethod.js";
 import AppError from "../errors/AppError.js";
 import sendResponse from "../utils/sendResponse.js";
 import catchAsync from "../utils/catchAsync.js";
 
-// Get user profile
-export const getProfile = catchAsync(async (req, res) => {
-  const user = await User.findById(req.user._id).select(
-    "-password -refreshToken -verificationInfo -password_reset_token"
+export const getMe = catchAsync(async (req, res) => {
+  const user = await User.findById(req.user.id).populate(
+    "learningProgress.completedLessons.lessonId"
   );
+
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User not found");
   }
@@ -17,41 +16,76 @@ export const getProfile = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Profile fetched successfully",
+    message: "Current user retrieved successfully",
     data: user,
   });
 });
 
-// Update profile
 export const updateProfile = catchAsync(async (req, res) => {
-  const { name, dob } = req.body;
+  const { skillLevel, desiredLevel, ageGroup, mainSkills, goals, growthAreas } =
+    req.body;
 
-  // Find user
-  const user = await User.findById(req.user._id).select(
-    "-password -refreshToken -verificationInfo -password_reset_token"
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    {
+      $set: {
+        "profile.skillLevel": skillLevel,
+        "profile.desiredLevel": desiredLevel,
+        "profile.ageGroup": ageGroup,
+        "profile.mainSkills": mainSkills,
+        "profile.goals": goals,
+        "profile.growthAreas": growthAreas,
+      },
+    },
+    { new: true, runValidators: true }
   );
+
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  // Update only provided fields
-  if (name) user.name = name;
-  if (dob) user.dob = dob;
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "User profile updated successfully",
+    data: user,
+  });
+});
 
-  console.log(req.file);
+export const updateLearningPreferences = catchAsync(async (req, res) => {
+  const { dailyReminder, notificationTime, notificationsEnabled } = req.body;
 
-  if (req.file) {
-    const result = await uploadOnCloudinary(req.file.buffer);
-    user.avatar.public_id = result.public_id;
-    user.avatar.url = result.secure_url;
+  if (
+    dailyReminder === undefined &&
+    notificationTime === undefined &&
+    notificationsEnabled === undefined
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "At least one preference must be provided"
+    );
   }
 
-  await user.save();
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        "preferences.dailyReminder": dailyReminder,
+        "preferences.notificationTime": notificationTime,
+        "preferences.notificationsEnabled": notificationsEnabled,
+      },
+    },
+    { new: true, runValidators: true }
+  );
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Profile updated successfully",
+    message: "Learning preferences updated successfully",
     data: user,
   });
 });

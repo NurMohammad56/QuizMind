@@ -1,21 +1,17 @@
 import express from "express";
 import {
-  getProfile,
+  getMe,
   updateProfile,
   changePassword,
+  updateLearningPreferences,
 } from "../controller/user.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
-import upload from "../middleware/multer.middleware.js";
 
 const router = express.Router();
 
-router.get("/profile", protect, getProfile);
-router.patch(
-  "/update-profile",
-  protect,
-  upload.single("avatar"),
-  updateProfile
-);
+router.get("/me", protect, getMe);
+router.patch("/profile", protect, updateProfile);
+router.put("/preferences", protect, updateLearningPreferences);
 router.post("/change-password", protect, changePassword);
 
 export default router;

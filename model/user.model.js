@@ -3,69 +3,137 @@ import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String },
     email: {
       type: String,
-      trim: true,
+      required: true,
+      unique: true,
       lowercase: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/,
-        "Please enter a valid email address",
+      trim: true,
+    },
+    password: {
+      type: String,
+      required: true,
+      minlength: 6,
+    },
+    profile: {
+      skillLevel: {
+        type: String,
+        enum: ["beginner", "practitioner", "proficient", "expert"],
+        default: "beginner",
+      },
+      desiredLevel: {
+        type: String,
+        enum: ["improve_little", "very_good", "become_excellent"],
+        default: "improve_little",
+      },
+      ageGroup: {
+        type: String,
+        enum: ["18-30", "31-40", "41-50", "51-60", "61+"],
+      },
+      mainSkills: [
+        {
+          type: String,
+          enum: [
+            "strategic_vision",
+            "user_engineering",
+            "leadership",
+            "technical_mastery",
+            "measurement",
+          ],
+        },
+      ],
+      goals: [
+        {
+          type: String,
+          enum: [
+            "professional_growth",
+            "improving_skills",
+            "learn_new_skill",
+            "change_career",
+            "time_management",
+          ],
+        },
+      ],
+      growthAreas: [
+        {
+          type: String,
+          enum: [
+            "better_expertise",
+            "improve_persuasion",
+            "more_strategic",
+            "reflect",
+          ],
+        },
       ],
     },
-    password: { type: String, select: 0 },
-    username: { type: String, unique: true },
-    phone: { type: String },
-
-    avatar: {
-      public_id: { type: String, default: "" },
-      url: { type: String, default: "" },
+    learningJourney: {
+      currentCourse: {
+        title: String,
+        duration: Number, // AI-generated duration (e.g., 180 days)
+        focusArea: String,
+      },
+      currentDay: {
+        type: Number,
+        default: 1,
+      },
+      totalDays: {
+        type: Number,
+        default: 180, // Default 6-month journey
+      },
+      lastLessonDate: Date,
+      completedDays: [
+        {
+          day: Number,
+          completedAt: Date,
+          lessonContent: String,
+          score: Number,
+          correctAnswers: Number,
+          totalQuestions: Number,
+        },
+      ],
+      streak: {
+        type: Number,
+        default: 0,
+      },
+      totalScore: {
+        type: Number,
+        default: 0,
+      },
     },
-
-    address: {
-      type: String,
+    preferences: {
+      dailyReminder: {
+        type: Boolean,
+        default: true,
+      },
+      notificationTime: {
+        type: String,
+        default: "09:00",
+      },
+      language: {
+        type: String,
+        enum: ["en", "fr"],
+        default: "en",
+      },
+      learningPace: {
+        type: String,
+        enum: ["relaxed", "moderate", "intensive"],
+        default: "moderate",
+      },
     },
-    verificationInfo: {
-      verified: { type: Boolean, default: false },
-      token: { type: String, default: "" },
-    },
-    password_reset_token: { type: String, default: "" },
-    refreshToken: { type: String, default: "" },
-    lastActive: { type: Date, default: Date.now },
-    dob: { type: Date, default: Date.now },
-    deviceToken: { type: String },
   },
   {
     timestamps: true,
   }
 );
 
-// Pre save middleware: Hash password
 userSchema.pre("save", async function (next) {
-  const user = this;
-
-  if (user.isModified("password")) {
-    const saltRounds = Number(process.env.bcrypt_salt_round) || 10;
-    user.password = await bcrypt.hash(user.password, saltRounds);
-  }
-
+  if (!this.isModified("password")) return next();
+  this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-userSchema.statics.isUserExistsByEmail = async function (email) {
-  return await User.findOne({ email }).select("+password");
-};
-
-userSchema.statics.isOTPVerified = async function (id) {
-  const user = await User.findById(id).select("+verificationInfo");
-  return user?.verificationInfo.verified;
-};
-
-userSchema.statics.isPasswordMatched = async function (
-  plainTextPassword,
-  hashPassword
-) {
-  return await bcrypt.compare(plainTextPassword, hashPassword);
+userSchema.methods.correctPassword = async function (candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
 export const User = mongoose.model("User", userSchema);
