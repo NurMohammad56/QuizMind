@@ -1,4 +1,3 @@
-// utils/aiLessonGenerator.js
 import axios from "axios";
 
 export const generateDailyLesson = async (lessonConfig) => {
@@ -9,24 +8,18 @@ export const generateDailyLesson = async (lessonConfig) => {
       totalDays,
       previousDays,
       language = "en",
-      learningPace,
+      learningPace = "moderate",
     } = lessonConfig;
 
     const systemMessages = {
-      en: `You are a daily lesson generator for strategic foresight training. 
-      Create engaging daily lessons that build on previous knowledge.
-      Return JSON with: title, content, mcqs (array with questions, options, correctAnswer, explanation), 
-      practicalExercise, and keyTakeaways.`,
-      fr: `Vous êtes un générateur de leçons quotidiennes pour la formation en prospective stratégique.
-      Créez des leçons quotidiennes engageantes qui s'appuient sur les connaissances précédentes.
-      Retournez JSON avec: title, content, mcqs (tableau avec questions, options, correctAnswer, explanation),
-      practicalExercise, et keyTakeaways.`,
+      en: `You are a daily lesson generator for an AI learning platform. Create engaging, progressive lessons tailored to the user's profile. Return JSON with: title, content (detailed explanation), mcqs (array of 3-5 objects with question, options, correctAnswer, explanation), practicalExercise, keyTakeaways.`,
+      fr: `Vous êtes un générateur de leçons quotidiennes pour une plateforme d'apprentissage IA. Créez des leçons engageantes et progressives adaptées au profil de l'utilisateur. Retournez JSON avec: title, content (explication détaillée), mcqs (tableau de 3-5 objets avec question, options, correctAnswer, explanation), practicalExercise, keyTakeaways.`,
     };
 
     const response = await axios.post(
       "https://api.mistral.ai/v1/chat/completions",
       {
-        model: "mistral-small",
+        model: "mistral-small-latest",
         messages: [
           {
             role: "system",
@@ -35,14 +28,20 @@ export const generateDailyLesson = async (lessonConfig) => {
           {
             role: "user",
             content: `Generate day ${currentDay}/${totalDays} lesson for:
-            User Level: ${userProfile.skillLevel}
+            Name: ${userProfile.name || "User"}
+            Profession: ${userProfile.profession || "other"}
+            Skills: ${userProfile.mainSkills?.join(", ") || "strategic_vision"}
+            Age Group: ${userProfile.ageGroup || "31-40"}
+            Goal: ${userProfile.goals?.[0] || "professional_growth"}
+            Growth Areas: ${
+              userProfile.growthAreas?.join(", ") || "more_strategic"
+            }
+            Skill Level: ${userProfile.skillLevel || "beginner"}
+            Desired Level: ${userProfile.desiredLevel || "improve_little"}
             Learning Pace: ${learningPace}
             Previous Days Completed: ${previousDays.length}
             Language: ${language}
-            
-            Focus on practical, engaging content that builds on previous learning.
-            Include 3-5 MCQs with explanations.
-            `,
+            Focus on practical, engaging content, e.g., introducing strategic foresight with principles.`,
           },
         ],
         temperature: 0.7,
@@ -59,20 +58,19 @@ export const generateDailyLesson = async (lessonConfig) => {
     );
 
     const lessonData = JSON.parse(response.data.choices[0].message.content);
-
-    // Add metadata
     return {
       ...lessonData,
       day: currentDay,
-      totalDays: totalDays,
-      duration: 15, // 15-minute lessons
-      language: language,
+      totalDays,
+      duration: 15,
+      language,
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error("AI Lesson Generation Error:", error);
-
-    // Fallback lesson content
+    console.error(
+      "AI Lesson Generation Error:",
+      error.response?.data || error.message
+    );
     return getFallbackLesson(lessonConfig);
   }
 };
@@ -80,52 +78,36 @@ export const generateDailyLesson = async (lessonConfig) => {
 const getFallbackLesson = (config) => ({
   title:
     config.language === "fr"
-      ? "Introduction à la Prospective Stratégique"
-      : "Introduction to Strategic Foresight",
+      ? "Introduction à l'Apprentissage"
+      : "Introduction to Learning",
   content:
     config.language === "fr"
-      ? "La prospective stratégique est une discipline qui vise à explorer les futurs possibles pour éclairer les actions présentes."
-      : "Strategic foresight is a discipline that aims to explore possible futures to inform present-day actions.",
+      ? "Cette leçon introduit les bases de l'apprentissage personnalisé."
+      : "This lesson introduces the basics of personalized learning.",
   mcqs: [
     {
       question:
         config.language === "fr"
-          ? "Quel est l'objectif principal de la prospective stratégique ?"
-          : "What is the main goal of strategic foresight?",
+          ? "Quel est le but principal ?"
+          : "What is the main purpose?",
       options: [
-        config.language === "fr"
-          ? "Prédire l'avenir avec précision"
-          : "Predict the future accurately",
-        config.language === "fr"
-          ? "Explorer les futurs possibles"
-          : "Explore possible futures",
-        config.language === "fr"
-          ? "Analyser seulement le passé"
-          : "Only analyze the past",
-        config.language === "fr"
-          ? "Créer des statistiques"
-          : "Create statistics",
+        config.language === "fr" ? "Prédire l'avenir" : "Predict the future",
+        config.language === "fr" ? "Apprendre quotidiennement" : "Learn daily",
+        config.language === "fr" ? "Analyser le passé" : "Analyze the past",
       ],
       correctAnswer:
-        config.language === "fr"
-          ? "Explorer les futurs possibles"
-          : "Explore possible futures",
+        config.language === "fr" ? "Apprendre quotidiennement" : "Learn daily",
       explanation:
         config.language === "fr"
-          ? "La prospective explore plusieurs futurs possibles plutôt que de tenter de prédire un seul avenir."
-          : "Foresight explores multiple possible futures rather than trying to predict one single future.",
+          ? "L'objectif est d'apprendre une leçon par jour."
+          : "The goal is to learn one lesson per day.",
     },
   ],
   practicalExercise:
     config.language === "fr"
-      ? "Identifiez une tendance émergente dans votre industrie et imaginez trois scénarios possibles."
-      : "Identify one emerging trend in your industry and imagine three possible scenarios.",
+      ? "Notez une compétence que vous voulez améliorer."
+      : "Note a skill you want to improve.",
   keyTakeaways: [
-    config.language === "fr"
-      ? "Exploration de multiples futurs"
-      : "Exploring multiple futures",
-    config.language === "fr"
-      ? "Prise de décision éclairée"
-      : "Informed decision-making",
+    config.language === "fr" ? "Apprentissage quotidien" : "Daily learning",
   ],
 });

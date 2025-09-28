@@ -1,35 +1,39 @@
-// utils/aiLearningPlanner.js
 import axios from "axios";
 
 export const generatePersonalizedLearningPlan = async (
   userProfile,
-  focusArea = null,
-  duration = null
+  focusArea = "strategic_foresight",
+  duration = 180
 ) => {
   try {
     const response = await axios.post(
       "https://api.mistral.ai/v1/chat/completions",
       {
-        model: "mistral-small",
+        model: "mistral-small-latest",
         messages: [
           {
             role: "system",
-            content: `You are an AI learning planner. Create personalized learning journeys based on user profiles. 
-            Return JSON with: courseTitle, duration (days), focusArea, learningObjectives, and dailyStructure.`,
+            content: `You are an AI learning planner. Create personalized plans based on user profiles. Return JSON with: courseTitle, duration (days), focusArea, learningObjectives (array), dailyStructure.`,
           },
           {
             role: "user",
-            content: `Create a personalized learning plan for:
-            Skill Level: ${userProfile.skillLevel}
-            Desired Level: ${userProfile.desiredLevel}
-            Goals: ${userProfile.goals?.join(", ")}
-            Growth Areas: ${userProfile.growthAreas?.join(", ")}
-            Focus Area: ${focusArea || "strategic_foresight"}
-            Duration: ${duration || "180"} days
-            `,
+            content: `Create a plan for:
+            Name: ${userProfile.name || "User"}
+            Profession: ${userProfile.profession || "other"}
+            Skills: ${userProfile.mainSkills?.join(", ") || "strategic_vision"}
+            Age Group: ${userProfile.ageGroup || "31-40"}
+            Goal: ${userProfile.goals?.[0] || "professional_growth"}
+            Growth Areas: ${
+              userProfile.growthAreas?.join(", ") || "more_strategic"
+            }
+            Skill Level: ${userProfile.skillLevel || "beginner"}
+            Desired Level: ${userProfile.desiredLevel || "improve_little"}
+            Focus Area: ${focusArea}
+            Duration: ${duration} days`,
           },
         ],
         temperature: 0.7,
+        max_tokens: 1000,
         response_format: { type: "json_object" },
       },
       {
@@ -37,23 +41,22 @@ export const generatePersonalizedLearningPlan = async (
           Authorization: `Bearer ${process.env.MISTRAL_API_KEY}`,
           "Content-Type": "application/json",
         },
+        timeout: 30000,
       }
     );
 
     return JSON.parse(response.data.choices[0].message.content);
   } catch (error) {
-    // Fallback plan
+    console.error(
+      "AI Learning Plan Error:",
+      error.response?.data || error.message
+    );
     return {
-      courseTitle: "Strategic Foresight Mastery",
-      duration: 180,
-      focusArea: "strategic_foresight",
-      learningObjectives: [
-        "Master prospective terminology",
-        "Develop strategic thinking skills",
-        "Apply foresight methodologies",
-        "Create future scenarios",
-      ],
-      dailyStructure: "15-minute lessons with practical exercises",
+      courseTitle: "Personalized Learning Journey",
+      duration: parseInt(duration, 10),
+      focusArea,
+      learningObjectives: ["Learn Basics", "Develop Skills", "Apply Knowledge"],
+      dailyStructure: "15-minute lessons with quizzes",
     };
   }
 };

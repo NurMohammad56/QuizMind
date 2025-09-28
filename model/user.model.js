@@ -5,17 +5,33 @@ const userSchema = new mongoose.Schema(
   {
     email: {
       type: String,
-      required: true,
+      required: [true, "Email is required"],
       unique: true,
       lowercase: true,
       trim: true,
     },
     password: {
       type: String,
-      required: true,
-      minlength: 6,
+      required: [true, "Password is required"],
+      minlength: [6, "Password must be at least 6 characters"],
+      select: false,
+    },
+    refreshToken: {
+      type: String,
+    },
+    lastLogin: {
+      type: Date,
     },
     profile: {
+      name: {
+        type: String,
+        required: [true, "Name is required"],
+      },
+      profession: {
+        type: String,
+        enum: ["manager", "engineer", "educator", "consultant", "other"],
+        default: "other",
+      },
       skillLevel: {
         type: String,
         enum: ["beginner", "practitioner", "proficient", "expert"],
@@ -68,9 +84,9 @@ const userSchema = new mongoose.Schema(
     },
     learningJourney: {
       currentCourse: {
-        title: String,
-        duration: Number, // AI-generated duration (e.g., 180 days)
-        focusArea: String,
+        title: { type: String },
+        duration: { type: Number, default: 180 },
+        focusArea: { type: String },
       },
       currentDay: {
         type: Number,
@@ -78,17 +94,17 @@ const userSchema = new mongoose.Schema(
       },
       totalDays: {
         type: Number,
-        default: 180, // Default 6-month journey
+        default: 180,
       },
-      lastLessonDate: Date,
+      lastLessonDate: { type: Date },
       completedDays: [
         {
-          day: Number,
-          completedAt: Date,
-          lessonContent: String,
-          score: Number,
-          correctAnswers: Number,
-          totalQuestions: Number,
+          day: { type: Number },
+          completedAt: { type: Date },
+          lessonContent: { type: String },
+          score: { type: Number },
+          correctAnswers: { type: Number },
+          totalQuestions: { type: Number },
         },
       ],
       streak: {
@@ -126,14 +142,18 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+// Password hashing
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
+// Method to check password
 userSchema.methods.correctPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-export const User = mongoose.model("User", userSchema);
+const User = mongoose.model("User", userSchema);
+
+export { User };
