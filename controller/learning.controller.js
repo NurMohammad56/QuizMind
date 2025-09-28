@@ -27,15 +27,32 @@ export const calibrateProficiency = catchAsync(async (req, res) => {
 export const getLearningPlan = catchAsync(async (req, res) => {
   const user = await User.findById(req.user.id);
 
-  if (!user.learningJourney.currentCourse) {
-    const learningPlan = await generatePersonalizedLearningPlan(user.profile);
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
+
+  let learningPlan;
+  if (
+    !user.learningJourney.currentCourse ||
+    !user.learningJourney.currentCourse.title
+  ) {
+    learningPlan = await generatePersonalizedLearningPlan(user.profile);
     user.learningJourney.currentCourse = {
       title: learningPlan.courseTitle,
       duration: learningPlan.duration,
       focusArea: learningPlan.focusArea,
+      learningObjectives: learningPlan.learningObjectives,
+      dailyStructure: learningPlan.dailyStructure,
     };
     user.learningJourney.totalDays = learningPlan.duration;
     await user.save();
+  } else {
+    learningPlan = {
+      courseTitle: user.learningJourney.currentCourse.title,
+      duration: user.learningJourney.currentCourse.duration,
+      focusArea: user.learningJourney.currentCourse.focusArea,
+      learningObjectives:
+        user.learningJourney.currentCourse.learningObjectives || [],
+      dailyStructure: user.learningJourney.currentCourse.dailyStructure || {},
+    };
   }
 
   sendResponse(res, {
@@ -48,6 +65,7 @@ export const getLearningPlan = catchAsync(async (req, res) => {
         (obj, index) => `${index + 1}. ${obj}`
       ),
       duration: user.learningJourney.totalDays,
+      dailyStructure: learningPlan.dailyStructure, // Include for frontend reference
     },
   });
 });
@@ -81,16 +99,270 @@ export const updateLearningPlan = catchAsync(async (req, res) => {
   });
 });
 
+// Helper function to update streak
+const updateUserStreak = (user) => {
+  const now = new Date();
+  const lastLessonDate = user.learningJourney.completedDays.length
+    ? new Date(
+        user.learningJourney.completedDays[
+          user.learningJourney.completedDays.length - 1
+        ].completedAt
+      )
+    : null;
+  if (lastLessonDate) {
+    const diffDays = Math.floor((now - lastLessonDate) / (1000 * 60 * 60 * 24));
+    user.learningJourney.streak =
+      diffDays === 1
+        ? user.learningJourney.streak + 1
+        : diffDays === 0
+        ? user.learningJourney.streak
+        : 0;
+  } else {
+    user.learningJourney.streak = 1;
+  }
+};
+
+export const getTodaysLesson = catchAsync(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
+
+  const now = new Date();
+  const lastLessonDate = user.learningJourney.lastLessonDate
+    ? new Date(user.learningJourney.lastLessonDate)
+    : null;
+  const lastAccessDay = lastLessonDate ? new Date(lastLessonDate) : new Date(0);
+  lastAccessDay.setHours(0, 0, 0, 0);
+
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  let currentDay = user.learningJourney.currentDay;
+  let dailyLesson = user.learningJourney.currentLesson;
+
+  if (
+    !dailyLesson ||
+    !dailyLesson.day ||
+    dailyLesson.day !== currentDay ||
+    today > lastAccessDay
+  ) {
+    if (lastLessonDate && (today - lastAccessDay) / (1000 * 60 * 60 * 24) > 1) {
+      user.learningJourney.streak = 0;
+    }
+    user.learningJourney.lastLessonDate = now;
+    dailyLesson = await generateDailyLesson({
+      userProfile: user.profile,
+      currentDay,
+      totalDays: user.learningJourney.totalDays,
+      previousDays: user.learningJourney.completedDays,
+      language: user.preferences.language,
+      learningPace: user.preferences.learningPace,
+    });
+    user.learningJourney.currentLesson = dailyLesson;
+    await user.save();
+  }
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    data: {
+      todaysGoal: `Today's Goal: ${dailyLesson.title}`,
+      lesson: dailyLesson,
+      progress: {
+        currentDay,
+        totalDays: user.learningJourney.totalDays,
+        completedDays: user.learningJourney.completedDays.length,
+      },
+    },
+  });
+});
+
+export const startLesson = catchAsync(async (req, res) => {
+  const { lessonQualityRating } = req.body;
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
+
+  if (
+    !lessonQualityRating ||
+    lessonQualityRating < 1 ||
+    lessonQualityRating > 5
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Rating must be between 1 and 5"
+    );
+  }
+
+  user.learningJourney.completedDays.push({
+    day: user.learningJourney.currentDay,
+    completedAt: new Date(),
+    lessonContent: "",
+    score: 0,
+    correctAnswers: 0,
+    totalQuestions: 5,
+    lessonQualityRating,
+    quizCompletions: [],
+  });
+  await user.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Lesson started with rating recorded",
+    data: { lessonQualityRating },
+  });
+});
+
+export const submitQuiz = catchAsync(async (req, res) => {
+  const { quizIndex, selected } = req.body;
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
+
+  const currentDayEntry = user.learningJourney.completedDays.find(
+    (entry) => entry.day === user.learningJourney.currentDay
+  );
+  if (!currentDayEntry)
+    throw new AppError(httpStatus.BAD_REQUEST, "Lesson not started");
+
+  // Prevent resubmission of the same quiz index
+  if (
+    currentDayEntry.quizCompletions.some((qc) => qc.quizIndex === quizIndex)
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "This quiz has already been submitted"
+    );
+  }
+
+  if (
+    !user.learningJourney.currentLesson ||
+    !user.learningJourney.currentLesson.mcqs
+  ) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "Lesson data not available"
+    );
+  }
+
+  const mcq = user.learningJourney.currentLesson.mcqs[quizIndex];
+  if (!mcq) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Invalid quiz index");
+  }
+
+  console.log(
+    "Debug - Stored Lesson MCQ for Index",
+    quizIndex,
+    ":",
+    JSON.stringify(mcq, null, 2)
+  );
+  console.log("Debug - Selected (trimmed):", selected.trim());
+  console.log("Debug - Correct Answer (trimmed):", mcq.correctAnswer.trim());
+
+  // Validate that selected matches one of the options (with or without label)
+  const validOptions = mcq.options.map(
+    (opt, index) => String.fromCharCode(65 + index) + ". " + opt.trim()
+  );
+  const isValidSelection =
+    validOptions.includes(selected.trim()) ||
+    mcq.options.includes(selected.trim());
+  if (!isValidSelection) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Invalid selection for quiz at index ${quizIndex}. Expected one of: ${validOptions.join(
+        ", "
+      )}`
+    );
+  }
+
+  let isCorrect = selected.trim() === mcq.correctAnswer.trim();
+  if (!isCorrect) {
+    // Check if selected matches a labeled option
+    const selectedOption = mcq.options.find((opt, index) => {
+      const label = String.fromCharCode(65 + index) + ". " + opt.trim();
+      console.log("Debug - Checking Label:", label);
+      return label === selected.trim();
+    });
+    isCorrect = selectedOption === mcq.correctAnswer.trim();
+  }
+
+  currentDayEntry.quizCompletions.push({
+    quizIndex,
+    selected,
+    isCorrect,
+    submittedAt: new Date(),
+  });
+
+  const correctAnswers = currentDayEntry.quizCompletions.filter(
+    (q) => q.isCorrect
+  ).length;
+  currentDayEntry.correctAnswers = correctAnswers;
+  currentDayEntry.score = Math.round((correctAnswers / 5) * 100);
+
+  await user.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Quiz submitted successfully",
+    data: {
+      quizIndex,
+      selected,
+      isCorrect,
+      remainingQuizzes: 5 - currentDayEntry.quizCompletions.length,
+    },
+  });
+});
+
+export const completeLesson = catchAsync(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
+
+  const currentDayEntry = user.learningJourney.completedDays.find(
+    (entry) => entry.day === user.learningJourney.currentDay
+  );
+  if (!currentDayEntry || currentDayEntry.quizCompletions.length < 5) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "All 5 quizzes must be completed"
+    );
+  }
+
+  const correctAnswers = currentDayEntry.quizCompletions.filter(
+    (q) => q.isCorrect
+  ).length;
+  if (currentDayEntry.correctAnswers !== correctAnswers) {
+    currentDayEntry.correctAnswers = correctAnswers;
+    currentDayEntry.score = Math.round((correctAnswers / 5) * 100);
+    await user.save();
+  }
+
+  user.learningJourney.currentDay += 1;
+  user.learningJourney.totalScore += currentDayEntry.score;
+  await updateUserStreak(user);
+  await user.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Lesson completed successfully!",
+    data: {
+      score: `${currentDayEntry.correctAnswers}/5`,
+      percentage: currentDayEntry.score,
+      streak: user.learningJourney.streak,
+      totalScore: user.learningJourney.totalScore,
+      lessonQualityRating: currentDayEntry.lessonQualityRating,
+    },
+  });
+});
+
 export const getDashboard = catchAsync(async (req, res) => {
   const user = await User.findById(req.user.id);
-
   if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
 
   const completedDays = user.learningJourney.completedDays.length;
   const totalScore = user.learningJourney.totalScore || 0;
   const averageScore =
     completedDays > 0 ? Math.round(totalScore / completedDays) : 0;
-  const rating = completedDays > 0 ? (averageScore / 20).toFixed(1) : "0.0"; // Scale to 5
+  const rating = completedDays > 0 ? (averageScore / 20).toFixed(1) : "0.0";
   const trend =
     completedDays > 1
       ? user.learningJourney.completedDays[completedDays - 1].score >
@@ -111,124 +383,11 @@ export const getDashboard = catchAsync(async (req, res) => {
       rating: `${rating} / 5`,
       trend,
       lessonsCompleted: completedDays,
+      streak: user.learningJourney.streak,
       nextLessonTime,
     },
   });
 });
-
-export const getTodaysLesson = catchAsync(async (req, res) => {
-  const user = await User.findById(req.user.id);
-
-  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
-
-  const now = new Date();
-  const lastLessonDate = user.learningJourney.lastLessonDate
-    ? new Date(user.learningJourney.lastLessonDate)
-    : null;
-  const lastAccessDay = lastLessonDate ? new Date(lastLessonDate) : new Date(0);
-  lastAccessDay.setHours(0, 0, 0, 0);
-
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-
-  if (!lastLessonDate || today > lastAccessDay) {
-    if (lastLessonDate && (today - lastAccessDay) / (1000 * 60 * 60 * 24) > 1) {
-      user.learningJourney.streak = 0;
-    }
-    if (user.learningJourney.currentDay >= user.learningJourney.totalDays) {
-      return sendResponse(res, {
-        statusCode: httpStatus.OK,
-        success: true,
-        message: "Course completed!",
-        data: { courseCompleted: true },
-      });
-    }
-    user.learningJourney.currentDay = user.learningJourney.currentDay + 1 || 1;
-    user.learningJourney.lastLessonDate = now;
-    await user.save();
-  }
-
-  const dailyLesson = await generateDailyLesson({
-    userProfile: user.profile,
-    currentDay: user.learningJourney.currentDay,
-    totalDays: user.learningJourney.totalDays,
-    previousDays: user.learningJourney.completedDays,
-    language: user.preferences.language,
-    learningPace: user.preferences.learningPace,
-  });
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    data: {
-      todaysGoal: `Today's Goal: ${dailyLesson.title}`,
-      lesson: dailyLesson,
-      progress: {
-        currentDay: user.learningJourney.currentDay,
-        totalDays: user.learningJourney.totalDays,
-        completedDays: user.learningJourney.completedDays.length,
-      },
-    },
-  });
-});
-
-export const completeLesson = catchAsync(async (req, res) => {
-  const { answers, timeSpent, lessonContent } = req.body;
-  const user = await User.findById(req.user.id);
-
-  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
-
-  const scoreResult = calculateScore(answers);
-
-  user.learningJourney.completedDays.push({
-    day: user.learningJourney.currentDay,
-    completedAt: new Date(),
-    lessonContent,
-    score: scoreResult.percentage,
-    correctAnswers: scoreResult.correctAnswers,
-    totalQuestions: scoreResult.totalQuestions,
-  });
-
-  user.learningJourney.totalScore += scoreResult.percentage;
-  await updateUserStreak(user);
-  await user.save();
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    message: "Lesson completed successfully!",
-    data: {
-      score: `${scoreResult.correctAnswers}/${scoreResult.totalQuestions}`,
-      percentage: scoreResult.percentage,
-      streak: user.learningJourney.streak,
-      totalScore: user.learningJourney.totalScore,
-    },
-  });
-});
-
-const calculateScore = (answers) => {
-  if (!answers || !Array.isArray(answers))
-    return { correctAnswers: 0, totalQuestions: 0, percentage: 0 };
-  const totalQuestions = answers.length;
-  const correctAnswers = answers.filter((a) => a.isCorrect).length;
-  const percentage =
-    totalQuestions > 0
-      ? Math.round((correctAnswers / totalQuestions) * 100)
-      : 0;
-  return { correctAnswers, totalQuestions, percentage };
-};
-
-const updateUserStreak = async (user) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const lastCompletion = user.learningJourney.lastLessonDate
-    ? new Date(user.learningJourney.lastLessonDate)
-    : new Date(0);
-  lastCompletion.setHours(0, 0, 0, 0);
-  const dayDiff = Math.floor((today - lastCompletion) / (1000 * 60 * 60 * 24));
-  if (dayDiff === 1) user.learningJourney.streak += 1;
-  else if (dayDiff > 1) user.learningJourney.streak = 1;
-};
 
 const getNextLessonTime = (now = new Date()) => {
   const tomorrow = new Date(now);

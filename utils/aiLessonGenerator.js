@@ -12,8 +12,8 @@ export const generateDailyLesson = async (lessonConfig) => {
     } = lessonConfig;
 
     const systemMessages = {
-      en: `You are a daily lesson generator for an AI learning platform. Create engaging, progressive lessons tailored to the user's profile. Return JSON with: title, content (detailed explanation), mcqs (array of 3-5 objects with question, options, correctAnswer, explanation), practicalExercise, keyTakeaways.`,
-      fr: `Vous êtes un générateur de leçons quotidiennes pour une plateforme d'apprentissage IA. Créez des leçons engageantes et progressives adaptées au profil de l'utilisateur. Retournez JSON avec: title, content (explication détaillée), mcqs (tableau de 3-5 objets avec question, options, correctAnswer, explanation), practicalExercise, keyTakeaways.`,
+      en: `You are a daily lesson generator for an AI learning platform. Create engaging, progressive lessons tailored to the user's profile. Return JSON with: title, content (detailed explanation), mcqs (array of 5 objects with question, options, correctAnswer, explanation), practicalExercise, keyTakeaways.`,
+      fr: `Vous êtes un générateur de leçons quotidiennes pour une plateforme d'apprentissage IA. Créez des leçons engageantes et progressives adaptées au profil de l'utilisateur. Retournez JSON avec: title, content (explication détaillée), mcqs (tableau de 5 objets avec question, options, correctAnswer, explanation), practicalExercise, keyTakeaways.`,
     };
 
     const response = await axios.post(

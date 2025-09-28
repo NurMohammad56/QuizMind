@@ -13,7 +13,7 @@ export const generatePersonalizedLearningPlan = async (
         messages: [
           {
             role: "system",
-            content: `You are an AI learning planner. Create personalized plans based on user profiles. Return JSON with: courseTitle, duration (days), focusArea, learningObjectives (array), dailyStructure.`,
+            content: `You are an AI learning planner. Create personalized plans based on user profiles. Return JSON with: courseTitle, duration (days), focusArea, learningObjectives (array), dailyStructure (object with phases, each containing title, days, and tasks array).`,
           },
           {
             role: "user",
@@ -29,11 +29,12 @@ export const generatePersonalizedLearningPlan = async (
             Skill Level: ${userProfile.skillLevel || "beginner"}
             Desired Level: ${userProfile.desiredLevel || "improve_little"}
             Focus Area: ${focusArea}
-            Duration: ${duration} days`,
+            Duration: ${duration} days
+            Ensure dailyStructure is an object with 5 phases (e.g., phase1, phase2, etc.), each with a title, days, and tasks array.`,
           },
         ],
         temperature: 0.7,
-        max_tokens: 1000,
+        max_tokens: 2000, // Increased for larger response
         response_format: { type: "json_object" },
       },
       {
@@ -56,7 +57,17 @@ export const generatePersonalizedLearningPlan = async (
       duration: parseInt(duration, 10),
       focusArea,
       learningObjectives: ["Learn Basics", "Develop Skills", "Apply Knowledge"],
-      dailyStructure: "15-minute lessons with quizzes",
+      dailyStructure: {
+        phase1: { title: "Foundations", days: 30, tasks: ["Task 1", "Task 2"] },
+        phase2: {
+          title: "Intermediate",
+          days: 60,
+          tasks: ["Task 3", "Task 4"],
+        },
+        phase3: { title: "Advanced", days: 60, tasks: ["Task 5", "Task 6"] },
+        phase4: { title: "Application", days: 20, tasks: ["Task 7", "Task 8"] },
+        phase5: { title: "Mastery", days: 10, tasks: ["Task 9", "Task 10"] },
+      },
     };
   }
 };

@@ -83,20 +83,11 @@ const userSchema = new mongoose.Schema(
       ],
     },
     learningJourney: {
-      currentCourse: {
-        title: { type: String },
-        duration: { type: Number, default: 180 },
-        focusArea: { type: String },
-      },
-      currentDay: {
-        type: Number,
-        default: 1,
-      },
-      totalDays: {
-        type: Number,
-        default: 180,
-      },
+      currentDay: { type: Number, default: 1 },
+      totalDays: { type: Number, default: 90 },
       lastLessonDate: { type: Date },
+      totalScore: { type: Number, default: 0 },
+      streak: { type: Number, default: 0 },
       completedDays: [
         {
           day: { type: Number },
@@ -105,15 +96,35 @@ const userSchema = new mongoose.Schema(
           score: { type: Number },
           correctAnswers: { type: Number },
           totalQuestions: { type: Number },
+          lessonQualityRating: { type: Number, min: 1, max: 5 },
+          quizCompletions: [
+            {
+              quizIndex: { type: Number },
+              selected: { type: String },
+              isCorrect: { type: Boolean },
+              submittedAt: { type: Date },
+            },
+          ],
         },
       ],
-      streak: {
-        type: Number,
-        default: 0,
-      },
-      totalScore: {
-        type: Number,
-        default: 0,
+      currentLesson: {
+        title: { type: String },
+        content: { type: String },
+        mcqs: [
+          {
+            question: { type: String },
+            options: [String],
+            correctAnswer: { type: String },
+            explanation: { type: String },
+          },
+        ],
+        practicalExercise: { type: Object },
+        keyTakeaways: [String],
+        day: { type: Number },
+        totalDays: { type: Number },
+        duration: { type: Number },
+        language: { type: String },
+        generatedAt: { type: Date },
       },
     },
     preferences: {
