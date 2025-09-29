@@ -48,14 +48,28 @@ const userSchema = new mongoose.Schema(
       },
       mainSkills: [
         {
-          type: String,
-          enum: [
-            "strategic_vision",
-            "user_engineering",
-            "leadership",
-            "technical_mastery",
-            "measurement",
-          ],
+          skill: {
+            type: String,
+            enum: [
+              "strategic_vision",
+              "user_engineering",
+              "leadership",
+              "technical_mastery",
+              "measurement",
+            ],
+          },
+          currentLevel: {
+            type: Number,
+            min: 1,
+            max: 10,
+            default: 1,
+          },
+          desiredLevel: {
+            type: Number,
+            min: 1,
+            max: 10,
+            default: 5,
+          },
         },
       ],
       goals: [
@@ -146,6 +160,19 @@ const userSchema = new mongoose.Schema(
         enum: ["relaxed", "moderate", "intensive"],
         default: "moderate",
       },
+    },
+    resetPasswordOTP: {
+      type: String,
+      select: false,
+    },
+    resetPasswordOTPExpiry: {
+      type: Date,
+      select: false,
+    },
+    resetPasswordVerified: {
+      type: Boolean,
+      default: false,
+      select: false,
     },
   },
   {

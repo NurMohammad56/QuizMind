@@ -5,6 +5,8 @@ import { generatePersonalizedLearningPlan } from "../utils/aiLearningPlanner.js"
 import { User } from "../model/user.model.js";
 import AppError from "../errors/AppError.js";
 import httpStatus from "http-status";
+import { Lesson } from "../model/lesson.model.js";
+import { marked } from "marked";
 
 export const calibrateProficiency = catchAsync(async (req, res) => {
   const { skillLevel, desiredLevel } = req.body;
@@ -122,59 +124,92 @@ const updateUserStreak = (user) => {
   }
 };
 
-export const getTodaysLesson = catchAsync(async (req, res) => {
+export const getQuizDetails = catchAsync(async (req, res) => {
+  const { day, quizIndex } = req.query;
   const user = await User.findById(req.user.id);
   if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
 
-  const now = new Date();
-  const lastLessonDate = user.learningJourney.lastLessonDate
-    ? new Date(user.learningJourney.lastLessonDate)
-    : null;
-  const lastAccessDay = lastLessonDate ? new Date(lastLessonDate) : new Date(0);
-  lastAccessDay.setHours(0, 0, 0, 0);
+  const lesson = await Lesson.findOne({ userId: user._id, day: parseInt(day) });
+  if (!lesson) throw new AppError(httpStatus.NOT_FOUND, "Lesson not found");
 
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
+  const completedDay = user.learningJourney.completedDays.find(
+    (entry) => entry.day === parseInt(day)
+  );
+  const totalQuestions = 5; // Fixed to 5 quizzes per day
+  const correctAnswers = completedDay
+    ? completedDay.quizCompletions.filter((qc) => qc.isCorrect).length
+    : 0;
+  const score = `${correctAnswers}/${totalQuestions}`;
+  const status = getQuizStatus(correctAnswers);
 
-  let currentDay = user.learningJourney.currentDay;
-  let dailyLesson = user.learningJourney.currentLesson;
-
-  if (
-    !dailyLesson ||
-    !dailyLesson.day ||
-    dailyLesson.day !== currentDay ||
-    today > lastAccessDay
-  ) {
-    if (lastLessonDate && (today - lastAccessDay) / (1000 * 60 * 60 * 24) > 1) {
-      user.learningJourney.streak = 0;
-    }
-    user.learningJourney.lastLessonDate = now;
-    dailyLesson = await generateDailyLesson({
-      userProfile: user.profile,
-      currentDay,
-      totalDays: user.learningJourney.totalDays,
-      previousDays: user.learningJourney.completedDays,
-      language: user.preferences.language,
-      learningPace: user.preferences.learningPace,
+  if (quizIndex === undefined) {
+    return sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      data: lesson.mcqs.map((mcq, index) => {
+        const quizCompletion = completedDay?.quizCompletions.find(
+          (qc) => qc.quizIndex === index
+        );
+        return {
+          index,
+          question: mcq.question,
+          options: mcq.options,
+          correctAnswer: mcq.correctAnswer,
+          explanation: mcq.explanation,
+          userAnswer: quizCompletion?.selected,
+          isCorrect: quizCompletion?.isCorrect,
+          score,
+          status,
+        };
+      }),
     });
-    user.learningJourney.currentLesson = dailyLesson;
-    await user.save();
   }
+
+  const index = parseInt(quizIndex);
+  if (index < 0 || index >= lesson.mcqs.length)
+    throw new AppError(httpStatus.BAD_REQUEST, "Invalid quiz index");
+
+  const mcq = lesson.mcqs[index];
+  const quizCompletion = completedDay?.quizCompletions.find(
+    (qc) => qc.quizIndex === index
+  );
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
     data: {
-      todaysGoal: `Today's Goal: ${dailyLesson.title}`,
-      lesson: dailyLesson,
-      progress: {
-        currentDay,
-        totalDays: user.learningJourney.totalDays,
-        completedDays: user.learningJourney.completedDays.length,
-      },
+      index,
+      question: mcq.question,
+      options: mcq.options,
+      correctAnswer: mcq.correctAnswer,
+      explanation: mcq.explanation,
+      userAnswer: quizCompletion?.selected,
+      isCorrect: quizCompletion?.isCorrect,
+      score,
+      status,
     },
   });
 });
+
+// Helper function to determine quiz status based on correct answers
+const getQuizStatus = (correctAnswers) => {
+  switch (correctAnswers) {
+    case 0:
+      return "Ouch!!";
+    case 1:
+      return "What Happen?";
+    case 2:
+      return "Uh huh";
+    case 3:
+      return "Fair";
+    case 4:
+      return "Good";
+    case 5:
+      return "Well done!!";
+    default:
+      return "Not Attempted"; // For cases where no quizzes are completed
+  }
+};
 
 export const startLesson = catchAsync(async (req, res) => {
   const { lessonQualityRating } = req.body;
@@ -335,6 +370,12 @@ export const completeLesson = catchAsync(async (req, res) => {
     await user.save();
   }
 
+  // Mark the lesson as completed in the Lesson model
+  await Lesson.findOneAndUpdate(
+    { userId: user._id, day: user.learningJourney.currentDay },
+    { completed: true }
+  );
+
   user.learningJourney.currentDay += 1;
   user.learningJourney.totalScore += currentDayEntry.score;
   await updateUserStreak(user);
@@ -350,6 +391,90 @@ export const completeLesson = catchAsync(async (req, res) => {
       streak: user.learningJourney.streak,
       totalScore: user.learningJourney.totalScore,
       lessonQualityRating: currentDayEntry.lessonQualityRating,
+    },
+  });
+});
+
+export const getTodaysLesson = catchAsync(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
+
+  const now = new Date();
+  const lastLessonDate = user.learningJourney.lastLessonDate
+    ? new Date(user.learningJourney.lastLessonDate)
+    : null;
+  const lastAccessDay = lastLessonDate ? new Date(lastLessonDate) : new Date(0);
+  lastAccessDay.setHours(0, 0, 0, 0);
+
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  let currentDay = user.learningJourney.currentDay;
+  let dailyLesson = user.learningJourney.currentLesson;
+
+  const lastCompletedDay = user.learningJourney.completedDays.length
+    ? user.learningJourney.completedDays[
+        user.learningJourney.completedDays.length - 1
+      ].day
+    : 0;
+  if (lastCompletedDay + 1 === currentDay && today > lastAccessDay) {
+    currentDay += 1;
+    user.learningJourney.currentDay = currentDay;
+  }
+
+  if (
+    !dailyLesson ||
+    !dailyLesson.day ||
+    dailyLesson.day !== currentDay ||
+    today > lastAccessDay
+  ) {
+    if (lastLessonDate && (today - lastAccessDay) / (1000 * 60 * 60 * 24) > 1) {
+      user.learningJourney.streak = 0;
+    }
+    user.learningJourney.lastLessonDate = now;
+    dailyLesson = await generateDailyLesson({
+      userProfile: user.profile,
+      currentDay,
+      totalDays: user.learningJourney.totalDays,
+      previousDays: user.learningJourney.completedDays,
+      language: user.preferences.language,
+      learningPace: user.preferences.learningPace,
+    });
+    // Convert content to HTML
+    dailyLesson.content = marked.parse(dailyLesson.content); // Assumes Markdown input
+    user.learningJourney.currentLesson = dailyLesson;
+
+    // Save to Lesson model with HTML content
+    await Lesson.create({
+      userId: user._id,
+      day: currentDay,
+      title: dailyLesson.title,
+      content: dailyLesson.content,
+      mcqs: dailyLesson.mcqs,
+      practicalExercise: dailyLesson.practicalExercise,
+      keyTakeaways: dailyLesson.keyTakeaways,
+      totalDays: dailyLesson.totalDays,
+      duration: dailyLesson.duration,
+      language: dailyLesson.language,
+      generatedAt: dailyLesson.generatedAt,
+    });
+    await user.save();
+  } else {
+    // Convert existing content to HTML if not already
+    dailyLesson.content = marked.parse(dailyLesson.content);
+  }
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    data: {
+      todaysGoal: `Today's Goal: ${dailyLesson.title}`,
+      lesson: dailyLesson,
+      progress: {
+        currentDay,
+        totalDays: user.learningJourney.totalDays,
+        completedDays: user.learningJourney.completedDays.length,
+      },
     },
   });
 });

@@ -8,6 +8,7 @@ import {
   completeLesson,
   startLesson,
   submitQuiz,
+  getQuizDetails,
 } from "../controller/learning.controller.js";
 
 import { protect } from "../middleware/auth.middleware.js";
@@ -19,6 +20,7 @@ router.get("/learning-plan", protect, getLearningPlan);
 router.patch("/update-learning-plan", protect, updateLearningPlan);
 router.get("/dashboard", protect, getDashboard);
 router.get("/todays-lesson", protect, getTodaysLesson);
+router.get("/quiz-details", protect, getQuizDetails);
 router.post("/start-lesson", protect, startLesson);
 router.post("/submit-quiz", protect, submitQuiz);
 router.post("/complete-lesson", protect, completeLesson);

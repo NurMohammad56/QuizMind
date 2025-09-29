@@ -4,6 +4,8 @@ import sendResponse from "../utils/sendResponse.js";
 import AppError from "../errors/AppError.js";
 import { User } from "../model/user.model.js";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
+import { sendEmail } from "../utils/sendEmail.js";
 
 // Generate Access & Refresh Tokens
 const generateTokens = (user) => {
@@ -29,7 +31,7 @@ export const register = catchAsync(async (req, res) => {
     email,
     password,
     profile: { name: profile?.name || "" },
-    isOTPVerified: true, // Set default OTP verification status
+    isOTPVerified: true,
   });
 
   const { accessToken, refreshToken } = generateTokens(user);
@@ -90,6 +92,106 @@ export const login = catchAsync(async (req, res) => {
   });
 });
 
+export const logout = catchAsync(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  user.refreshToken = null;
+  await user.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "User logged out successfully",
+  });
+});
+
+export const forgotPassword = catchAsync(async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Email is required");
+  }
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  user.resetPasswordOTP = otp;
+  user.resetPasswordOTPExpiry = Date.now() + 10 * 60 * 1000;
+  user.resetPasswordVerified = false;
+  await user.save({ validateBeforeSave: false });
+
+  sendEmail(user.email, "Reset Password", `Your OTP is ${otp}`);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "OTP sent to email",
+  });
+});
+
+export const verifyOtp = catchAsync(async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Email and OTP required");
+  }
+
+  const user = await User.findOne({ email }).select(
+    "+resetPasswordOTP +resetPasswordOTPExpiry"
+  );
+  if (
+    !user ||
+    user.resetPasswordOTP !== otp ||
+    user.resetPasswordOTPExpiry < Date.now()
+  ) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Invalid or expired OTP");
+  }
+
+  user.resetPasswordVerified = true;
+  await user.save({ validateBeforeSave: false });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "OTP verified successfully",
+  });
+});
+
+export const resetPassword = catchAsync(async (req, res) => {
+  const { email, newPassword } = req.body;
+  if (!email || !newPassword) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Email and new password required"
+    );
+  }
+
+  const user = await User.findOne({ email }).select(
+    "+resetPasswordVerified +password"
+  );
+  if (!user || !user.resetPasswordVerified) {
+    throw new AppError(httpStatus.BAD_REQUEST, "OTP not verified");
+  }
+
+  user.password = newPassword;
+  user.resetPasswordOTP = undefined;
+  user.resetPasswordOTPExpiry = undefined;
+  user.resetPasswordVerified = false;
+
+  await user.save();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Password reset successful",
+  });
+});
+
 export const setupProfile = catchAsync(async (req, res) => {
   const {
     name,
@@ -102,7 +204,6 @@ export const setupProfile = catchAsync(async (req, res) => {
     desiredLevel,
   } = req.body;
 
-  // Ensure req.user exists
   if (!req.user || !req.user._id) {
     throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
   }
@@ -112,12 +213,48 @@ export const setupProfile = catchAsync(async (req, res) => {
     throw new AppError(httpStatus.NOT_FOUND, "User not found");
   }
 
+  // Validate and process mainSkills
+  const processedMainSkills = [];
+  if (mainSkills && Array.isArray(mainSkills)) {
+    for (const skillObj of mainSkills) {
+      if (typeof skillObj === "object" && skillObj.skill) {
+        // Check if skill is an array of characters and join it
+        let skillValue = skillObj.skill;
+        if (Array.isArray(skillValue)) {
+          skillValue = skillValue.join("");
+        }
+        if (
+          ![
+            "strategic_vision",
+            "user_engineering",
+            "leadership",
+            "technical_mastery",
+            "measurement",
+          ].includes(skillValue)
+        ) {
+          throw new AppError(
+            httpStatus.BAD_REQUEST,
+            `Invalid skill: ${skillValue}`
+          );
+        }
+        processedMainSkills.push({
+          skill: skillValue,
+          currentLevel: Math.max(1, Math.min(10, skillObj.currentLevel || 1)),
+          desiredLevel: Math.max(1, Math.min(10, skillObj.desiredLevel || 5)),
+        });
+      }
+    }
+  }
+
   // Safely update profile with fallbacks
   user.profile = {
     name: name || user.profile?.name || "",
     profession: profession || user.profile?.profession || "",
     ageGroup: ageGroup || user.profile?.ageGroup || "",
-    mainSkills: mainSkills || user.profile?.mainSkills || [],
+    mainSkills:
+      processedMainSkills.length > 0
+        ? processedMainSkills
+        : user.profile?.mainSkills || [],
     goals: goals || user.profile?.goals || [],
     growthAreas: growthAreas || user.profile?.growthAreas || [],
     skillLevel: skillLevel || user.profile?.skillLevel || "beginner",
