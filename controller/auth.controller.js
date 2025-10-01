@@ -204,25 +204,18 @@ export const setupProfile = catchAsync(async (req, res) => {
     desiredLevel,
   } = req.body;
 
-  if (!req.user || !req.user._id) {
+  if (!req.user || !req.user._id)
     throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
-  }
 
   const user = await User.findById(req.user._id);
-  if (!user) {
-    throw new AppError(httpStatus.NOT_FOUND, "User not found");
-  }
+  if (!user) throw new AppError(httpStatus.NOT_FOUND, "User not found");
 
-  // Validate and process mainSkills
   const processedMainSkills = [];
   if (mainSkills && Array.isArray(mainSkills)) {
     for (const skillObj of mainSkills) {
       if (typeof skillObj === "object" && skillObj.skill) {
-        // Check if skill is an array of characters and join it
         let skillValue = skillObj.skill;
-        if (Array.isArray(skillValue)) {
-          skillValue = skillValue.join("");
-        }
+        if (Array.isArray(skillValue)) skillValue = skillValue.join("");
         if (
           ![
             "strategic_vision",
@@ -246,7 +239,6 @@ export const setupProfile = catchAsync(async (req, res) => {
     }
   }
 
-  // Safely update profile with fallbacks
   user.profile = {
     name: name || user.profile?.name || "",
     profession: profession || user.profile?.profession || "",
@@ -267,12 +259,7 @@ export const setupProfile = catchAsync(async (req, res) => {
     statusCode: httpStatus.OK,
     success: true,
     message: "Profile setup completed successfully",
-    data: {
-      user: {
-        id: user._id,
-        profile: user.profile,
-      },
-    },
+    data: { user: { id: user._id, profile: user.profile } },
   });
 });
 

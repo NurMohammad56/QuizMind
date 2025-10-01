@@ -5,6 +5,7 @@ const lessonSchema = new mongoose.Schema({
   day: { type: Number, required: true },
   title: { type: String, required: true },
   content: { type: String },
+  imageUrl: { type: String },
   mcqs: [
     {
       question: { type: String },

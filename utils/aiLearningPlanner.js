@@ -20,7 +20,10 @@ export const generatePersonalizedLearningPlan = async (
             content: `Create a plan for:
             Name: ${userProfile.name || "User"}
             Profession: ${userProfile.profession || "other"}
-            Skills: ${userProfile.mainSkills?.join(", ") || "strategic_vision"}
+            Skills: ${
+              userProfile.mainSkills?.map((s) => s.skill).join(", ") ||
+              "strategic_vision"
+            }
             Age Group: ${userProfile.ageGroup || "31-40"}
             Goal: ${userProfile.goals?.[0] || "professional_growth"}
             Growth Areas: ${
@@ -34,7 +37,7 @@ export const generatePersonalizedLearningPlan = async (
           },
         ],
         temperature: 0.7,
-        max_tokens: 2000, // Increased for larger response
+        max_tokens: 2000,
         response_format: { type: "json_object" },
       },
       {

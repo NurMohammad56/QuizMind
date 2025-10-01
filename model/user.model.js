@@ -16,17 +16,10 @@ const userSchema = new mongoose.Schema(
       minlength: [6, "Password must be at least 6 characters"],
       select: false,
     },
-    refreshToken: {
-      type: String,
-    },
-    lastLogin: {
-      type: Date,
-    },
+    refreshToken: { type: String },
+    lastLogin: { type: Date },
     profile: {
-      name: {
-        type: String,
-        required: [true, "Name is required"],
-      },
+      name: { type: String, required: [true, "Name is required"] },
       profession: {
         type: String,
         enum: ["manager", "engineer", "educator", "consultant", "other"],
@@ -57,19 +50,10 @@ const userSchema = new mongoose.Schema(
               "technical_mastery",
               "measurement",
             ],
+            required: true,
           },
-          currentLevel: {
-            type: Number,
-            min: 1,
-            max: 10,
-            default: 1,
-          },
-          desiredLevel: {
-            type: Number,
-            min: 1,
-            max: 10,
-            default: 5,
-          },
+          currentLevel: { type: Number, min: 1, max: 10, default: 1 },
+          desiredLevel: { type: Number, min: 1, max: 10, default: 5 },
         },
       ],
       goals: [
@@ -97,11 +81,16 @@ const userSchema = new mongoose.Schema(
       ],
     },
     learningJourney: {
+      currentCourse: {
+        title: { type: String },
+        duration: { type: Number, default: 180 },
+        focusArea: { type: String },
+        learningObjectives: [{ type: String }],
+        dailyStructure: { type: Object, default: {} },
+      },
       currentDay: { type: Number, default: 1 },
-      totalDays: { type: Number, default: 90 },
+      totalDays: { type: Number, default: 180 },
       lastLessonDate: { type: Date },
-      totalScore: { type: Number, default: 0 },
-      streak: { type: Number, default: 0 },
       completedDays: [
         {
           day: { type: Number },
@@ -109,7 +98,7 @@ const userSchema = new mongoose.Schema(
           lessonContent: { type: String },
           score: { type: Number },
           correctAnswers: { type: Number },
-          totalQuestions: { type: Number },
+          totalQuestions: { type: Number, default: 5 },
           lessonQualityRating: { type: Number, min: 1, max: 5 },
           quizCompletions: [
             {
@@ -119,11 +108,15 @@ const userSchema = new mongoose.Schema(
               submittedAt: { type: Date },
             },
           ],
+          knowledgeGaps: [{ type: String }],
         },
       ],
+      streak: { type: Number, default: 0 },
+      totalScore: { type: Number, default: 0 },
       currentLesson: {
         title: { type: String },
         content: { type: String },
+        imageUrl: { type: String },
         mcqs: [
           {
             question: { type: String },
@@ -142,19 +135,7 @@ const userSchema = new mongoose.Schema(
       },
     },
     preferences: {
-      dailyReminder: {
-        type: Boolean,
-        default: true,
-      },
-      notificationTime: {
-        type: String,
-        default: "09:00",
-      },
-      language: {
-        type: String,
-        enum: ["en", "fr"],
-        default: "en",
-      },
+      language: { type: String, enum: ["en", "fr"], default: "en" },
       learningPace: {
         type: String,
         enum: ["relaxed", "moderate", "intensive"],
@@ -175,23 +156,17 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Password hashing
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-// Method to check password
 userSchema.methods.correctPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-const User = mongoose.model("User", userSchema);
-
-export { User };
+export const User = mongoose.model("User", userSchema);
